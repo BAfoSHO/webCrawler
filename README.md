@@ -4,6 +4,11 @@
 
 ## Getting started
 
+This project uses ChromeDriver for Selenium testing. The ChromeDriver executable must be in the same directory as the project's executable.
+    The latest version of ChromeDriver can be downloaded from [here](https://chromedriver.chromium.org/downloads).
+
+
+
 To make it easy for you to get started with GitLab, here's a list of recommended next steps.
 
 Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!

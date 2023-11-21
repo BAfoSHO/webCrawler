@@ -1,0 +1,3 @@
+# required dependencies for the project
+
+# placeholder
