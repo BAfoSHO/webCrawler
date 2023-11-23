@@ -1,22 +1,15 @@
-from config import DATABASE_PATH
 from selenium import webdriver
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.common.exceptions import WebDriverException, NoSuchElementException
 import time
 import tldextract
-from database import create_connection, create_table, insert_cookie_data, init_db
-
-
-# Path to your SQLite database file
-DATABASE_PATH = 'cookies.db'
-
-# Initialize the database
-init_db(DATABASE_PATH)
+from database import create_connection, insert_cookie_data, insert_research_data
+from config import DATABASE_PATH
+import threading
 
 
 class Crawler:
-    def __init__(self, driver_path, headless=False):
-        self.driver_path = driver_path
+    def __init__(self, headless=False):
         self.driver = None
         self.headless = headless
         
@@ -28,7 +21,6 @@ class Crawler:
             self.driver = webdriver.Chrome(ChromeDriverManager().install(), options=options)
         except WebDriverException as e:
             print(f"Error starting the browser: {e}")
-            raise
 
     def quit_browser(self):
         if self.driver:
@@ -40,7 +32,6 @@ class Crawler:
             time.sleep(5)
         except WebDriverException as e:
             print(f"Error navigating to {url}: {e}")
-            raise
 
     def get_cookies(self):
         try:
@@ -62,41 +53,49 @@ class Crawler:
                 third_party.append(cookie)
 
         return first_party, third_party
-    
-    def run(self, urls, analyze_cookies=False):
-        conn = create_connection("DATABASE_PATH")
+
+    def google_search(self, query, max_results=5):
+        self.navigate_to(f"https://www.google.com/search?q={query}")
+        links = self.driver.find_elements_by_css_selector('.tF2Cxc .yuRUbf a')
+        return [link.get_attribute('href') for link in links[:max_results]]
+
+    def extract_page_data(self, url):
+        self.navigate_to(url)
+        # Example extraction logic (needs to be tailored to your needs)
+        title = self.driver.find_element_by_tag_name('h1').text
+        content = self.driver.find_element_by_tag_name('body').text
+        return {'url': url, 'title': title, 'content': content}
+
+    def run(self, urls, mode='scrape', max_results=5):
+        conn = create_connection(DATABASE_PATH)
         if conn is None:
             print("Error! Cannot create a database connection.")
             return
+
         self.start_browser()
-        for url in urls:
-            try:
+        if mode == 'research':
+            for term in urls:  # In research mode, urls are search terms
+                search_urls = self.google_search(term, max_results=max_results)
+                for url in search_urls:
+                    page_data = self.extract_page_data(url)
+                    insert_research_data(conn, (term, page_data['url'], page_data['title'], page_data['content']))
+        else:  # Scrape mode
+            for url in urls:
                 self.navigate_to(url)
                 cookies = self.get_cookies()
+                first_party, third_party = self.categorize_cookies(url, cookies)
+                for cookie in first_party + third_party:
+                    is_first_party = cookie['domain'] == tldextract.extract(url).registered_domain
+                    cookie_data = (url, cookie['name'], cookie['value'], cookie['domain'], 
+                                   cookie['path'], cookie.get('expiry'), cookie.get('httpOnly'), 
+                                   cookie.get('secure'), is_first_party)
+                    insert_cookie_data(conn, cookie_data)
 
-                if analyze_cookies:
-                    first_party, third_party = self.categorize_cookies(url, cookies)
-                    # Process and save the categorized cookie data
-                    for cookie in first_party + third_party:
-                        cookie_data = (url, cookie['name'], cookie['value'], cookie['domain'], 
-                                       cookie['path'], cookie.get('expiry'), cookie.get('httpOnly'), 
-                                       cookie.get('secure'), cookie['domain'] == url)
-                        insert_cookie_data(conn, cookie_data)
-                    print(f"First-party cookies: {first_party}")
-                    print(f"Third-party cookies: {third_party}")
-                else:
-                    # Process and save general cookie data
-                    for cookie in cookies:
-                        # Assume a similar structure for cookie_data as above
-                        insert_cookie_data(conn, cookie_data)
-
-            except Exception as e:
-                print(f"Error running the crawler on {url}: {e}")
         conn.close()
         self.quit_browser()
 
 if __name__ == "__main__":
-    urls = ["https://www.example.com"]
+    # Example usage
     crawler = Crawler(headless=True)
-    crawler.run(urls, analyze_cookies=True)
+    crawler.run(["https://www.example.com"], mode='scrape')
 
