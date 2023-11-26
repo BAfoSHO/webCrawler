@@ -1,6 +1,19 @@
 # CS3640-A5
+## Exploring the Digital Cookie Jar
 
-This is an open-ended project for Assignment 5 of CS3640. The goal of this project is to crawl and scrape websites to answer a specific question that we are curious about. My question: "What are differences between 1st and 3rd party cookies, and how are they displayed among different types of websites(e-commerce, entertainment, media)?"
+Objective: Dive deep into the digital world to unravel the intricacies of web cookies. I am on a quest to understand the nuances of first-party and third-party cookies and their varied implementations across diverse website categories like e-commerce, entertainment, and media.
+
+The Tool: Dual-mode Web Crawler
+I have engineered a versatile web crawler with two operational modes:
+
+🕸️ Scrape Mode
+Purpose: Harvest cookies directly from your chosen websites.
+Function: Feed it URLs and it meticulously scrapes cookies from each site.
+
+🔍 Research Mode
+Purpose: Simulate a Google search experience.
+Function: Input keywords, and it fetches top-ranking websites related to your query.
+
 
 ## Getting started
 
