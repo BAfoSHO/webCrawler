@@ -3,7 +3,7 @@
 
 Objective: Dive deep into the digital world to unravel the intricacies of web cookies. I am on a quest to understand the nuances of first-party and third-party cookies and their varied implementations across diverse website categories like e-commerce, entertainment, and media.
 
-The Tool: Dual-mode Web Crawler
+The Tool: A Dual-mode Web Crawler <br>
 I have engineered a versatile web crawler with two operational modes:
 
 🕸️ Scrape Mode <br>
