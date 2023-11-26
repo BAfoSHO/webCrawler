@@ -1,3 +1,5 @@
-# required dependencies for the project
-
-# placeholder
+#requirements to run the crawler
+selenium
+webdriver-manager
+sqlite3
+tldextract
