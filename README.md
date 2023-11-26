@@ -7,11 +7,11 @@ The Tool: Dual-mode Web Crawler
 I have engineered a versatile web crawler with two operational modes:
 
 🕸️ Scrape Mode <br>
-Purpose: Harvest cookies directly from your chosen websites.
+Purpose: Harvest cookies directly from your chosen websites. <br>
 Function: Feed it URLs and it meticulously scrapes cookies from each site.
 
 🔍 Research Mode <br>
-Purpose: Simulate a Google search experience.
+Purpose: Simulate a Google search experience. <br>
 Function: Input keywords, and it fetches top-ranking websites related to your query.
 
 
