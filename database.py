@@ -76,13 +76,16 @@ def init_db():
     );
     """
 
-    conn = create_connection(DATABASE_PATH)  # Pass DATABASE_PATH as an argument
+    print("Initializing database...")
+    conn = create_connection(DATABASE_PATH)
     if conn:
+        print("Creating tables...")
         create_table(conn, cookies_table_sql)
         create_table(conn, research_data_table_sql)
         conn.close()
+        print("Tables created successfully.")
     else:
-        print("Error! cannot create the database connection.")
+        print("Error! Cannot create the database connection.")
 
 if __name__ == "__main__":
     init_db()

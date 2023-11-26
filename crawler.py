@@ -3,11 +3,16 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.common.exceptions import WebDriverException, NoSuchElementException
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.common.by import By
 from export_cookies import export_cookies_to_csv
 import tldextract
-from database import create_connection, insert_cookie_data, insert_research_data
+from database import create_connection, init_db, insert_cookie_data, insert_research_data
 from config import DATABASE_PATH
 import sqlite3
+import logging
+import sys
+
+logging.basicConfig(filename='crawler.log', level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
 
 def check_for_duplicate(conn, table, url):
@@ -27,6 +32,7 @@ class Crawler:
         self.driver = None
         self.headless = headless
         self.conn = None
+        self.domain_counter = {}
 
     def start_browser(self):
         options = webdriver.ChromeOptions()
@@ -72,18 +78,24 @@ class Crawler:
 
     def google_search(self, query, max_results=5):
         self.navigate_to(f"https://www.google.com/search?q={query}")
-        links = self.driver.find_elements_by_css_selector('.tF2Cxc .yuRUbf a')
+        links = self.driver.find_elements(By.CSS_SELECTOR, '.tF2Cxc .yuRUbf a')
         return [link.get_attribute('href') for link in links[:max_results]]
 
     def extract_page_data(self, url):
         self.navigate_to(url)
         try:
-            title = self.driver.find_element_by_tag_name('h1').text
-            content = self.driver.find_element_by_tag_name('body').text
+            title = self.driver.find_element(By.TAG_NAME, 'h1').text
+            content = self.driver.find_element(By.TAG_NAME, 'body').text
             return {'url': url, 'title': title, 'content': content}
         except NoSuchElementException as e:
             print(f"Error extracting data from {url}: {e}")
             return {'url': url, 'title': '', 'content': ''}
+        
+    def update_domain_counter(self, domain, count):
+        if domain in self.domain_counter:
+            self.domain_counter[domain] += count
+        else:
+            self.domain_counter[domain] = count
 
     def research_mode_logic(self, query, max_results):
         search_results = self.google_search(query, max_results)
@@ -106,8 +118,13 @@ class Crawler:
                     self.navigate_to(url)
                     cookies = self.get_cookies()
                     first_party, third_party = self.categorize_cookies(url, cookies)
+
+                    # Update domain counter here
+                    domain = tldextract.extract(url).registered_domain
+                    self.update_domain_counter(domain, len(first_party) + len(third_party))
+
                     for cookie in first_party + third_party:
-                        is_first_party = cookie['domain'] == tldextract.extract(url).registered_domain
+                        is_first_party = cookie['domain'] == domain
                         cookie_data = (url, cookie['name'], cookie['value'], cookie['domain'], 
                                     cookie['path'], cookie.get('expiry'), cookie.get('httpOnly'), 
                                     cookie.get('secure'), is_first_party)
@@ -117,8 +134,28 @@ class Crawler:
             else:
                 print(f"Duplicate found, skipping: {url}")
 
+    def display_domain_counts(self):
+        for domain, count in self.domain_counter.items():
+            print(f"Domain: {domain}, Cookie Count: {count}")
+
     def export_cookies(self, csv_file_path):
         export_cookies_to_csv(DATABASE_PATH, csv_file_path)
+
+    def purge_database(self):
+        """Purges data from the database tables."""
+        conn = self.conn or create_connection(DATABASE_PATH)
+        if conn is None:
+            print("Error! Cannot create a database connection.")
+            return
+
+        try:
+            with conn:
+                cur = conn.cursor()
+                cur.execute("DELETE FROM cookies")
+                cur.execute("DELETE FROM research_data")
+            print("Database purged successfully.")
+        except sqlite3.Error as e:
+            print(f"Error purging database: {e}")
 
     def run(self, input_data, mode='scrape', max_results=5, export_to_csv=False):
         self.conn = create_connection(DATABASE_PATH)
@@ -146,6 +183,7 @@ def display_help():
     print("  - 'research': Enter research mode to perform search queries and extract data from the results.")
     print("  - 'q', 'quit', or 'exit': Quit the crawler.")
     print("  - '-help': Display this help information.")
+    print("  - 'purge': Purge the database of all data.")
 
 
 def prepend_http(urls):
@@ -153,6 +191,7 @@ def prepend_http(urls):
 
 
 if __name__ == "__main__":
+    init_db()
     crawler = Crawler(headless=True)
 
     while True:
@@ -167,12 +206,15 @@ if __name__ == "__main__":
             urls = input("Enter URLs to scrape, separated by commas: ").split(',')
             urls = prepend_http(urls)  # Prepend 'http://' if missing
             crawler.run(urls, mode='scrape')
-        elif command == 'scrape':
-            urls = input("Enter URLs to scrape, separated by commas: ").split(',')
-            crawler.run(urls, mode='scrape')
         elif command == 'research':
             queries = input("Enter search queries, separated by commas: ").split(',')
             crawler.run(queries, mode='research')
+        elif command == 'purge':
+            confirmation = input("Are you sure you want to purge the database? (yes/no): ").strip().lower()
+            if confirmation == 'yes':
+                crawler.purge_database()
+            else:
+                print("Purge cancelled.")
         else:
             print("Invalid command. Enter '-help' for options.")
 
