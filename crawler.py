@@ -12,7 +12,7 @@ import sqlite3
 import logging
 import sys
 
-logging.basicConfig(filename='crawler.log', level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
+#logging.basicConfig(filename='crawler.log', level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
 
 def check_for_duplicate(conn, table, url):
@@ -57,19 +57,25 @@ class Crawler:
 
     def get_cookies(self):
         try:
-            return self.driver.get_cookies()
+            cookies = self.driver.get_cookies()
+            for cookie in cookies:
+                print(f"Cookie data: {cookie}")
+            return cookies
         except WebDriverException as e:
             print(f"Error getting cookies: {e}")
             return []
+        
 
     def categorize_cookies(self, base_url, cookies):
-        base_domain = tldextract.extract(base_url).registered_domain
+        base_domain = (tldextract.extract(base_url).registered_domain)
         first_party = []
         third_party = []
 
         for cookie in cookies:
-            cookie_domain = tldextract.extract(cookie['domain']).registered_domain
-            if cookie_domain == base_domain:
+            # Normalize the cookie domain by stripping leading dots
+            cookie_domain = cookie['domain'].lstrip('.')
+            # Check if the cookie's domain is the base domain or a subdomain of the base domain
+            if cookie_domain == base_domain or cookie_domain.endswith('.' + base_domain):
                 first_party.append(cookie)
             else:
                 third_party.append(cookie)
@@ -92,6 +98,7 @@ class Crawler:
             return {'url': url, 'title': '', 'content': ''}
         
     def update_domain_counter(self, domain, count):
+        domain = (domain)
         if domain in self.domain_counter:
             self.domain_counter[domain] += count
         else:
@@ -134,28 +141,40 @@ class Crawler:
             else:
                 print(f"Duplicate found, skipping: {url}")
 
-    def display_domain_counts(self):
-        for domain, count in self.domain_counter.items():
-            print(f"Domain: {domain}, Cookie Count: {count}")
-
     def export_cookies(self, csv_file_path):
         export_cookies_to_csv(DATABASE_PATH, csv_file_path)
 
     def purge_database(self):
-        """Purges data from the database tables."""
-        conn = self.conn or create_connection(DATABASE_PATH)
-        if conn is None:
-            print("Error! Cannot create a database connection.")
-            return
-
         try:
-            with conn:
-                cur = conn.cursor()
+            # Try executing a simple query to check if the connection is open
+            if self.conn is None:
+                self.conn = create_connection(DATABASE_PATH)
+            else:
+                self.conn.execute('SELECT 1')
+
+            with self.conn:
+                cur = self.conn.cursor()
                 cur.execute("DELETE FROM cookies")
                 cur.execute("DELETE FROM research_data")
             print("Database purged successfully.")
-        except sqlite3.Error as e:
+        except (sqlite3.Error, sqlite3.ProgrammingError) as e:
+            # If there's an error (like a closed connection), reconnect and retry
+            self.conn = create_connection(DATABASE_PATH)
+            with self.conn:
+                cur = self.conn.cursor()
+                cur.execute("DELETE FROM cookies")
+                cur.execute("DELETE FROM research_data")
+            print("Database purged successfully.")
+        except Exception as e:
             print(f"Error purging database: {e}")
+
+    def display_domain_counts(self):
+        # Sort the domain_counter dictionary by count in descending order
+        sorted_domains = sorted(self.domain_counter.items(), key=lambda x: x[1], reverse=True)
+        
+        print("Crawl Complete.")
+        for domain, count in sorted_domains:
+            print(f"Domain: {domain}, Cookie Count: {count}")
 
     def run(self, input_data, mode='scrape', max_results=5, export_to_csv=False):
         self.conn = create_connection(DATABASE_PATH)
@@ -169,6 +188,8 @@ class Crawler:
                 self.research_mode_logic(query, max_results)
         else:  # Scrape mode
             self.scrape_mode_logic(input_data)
+
+        self.display_domain_counts()    # Display domain counts
 
         self.conn.close()
         self.quit_browser()
@@ -203,11 +224,17 @@ if __name__ == "__main__":
             print("Quitting the crawler.")
             break
         elif command == 'scrape':
-            urls = input("Enter URLs to scrape, separated by commas: ").split(',')
+            urls = input("Enter URLs to scrape, separated by commas, or type 'back' to return: ").strip()
+            if urls.lower() == 'back':
+                continue  # Go back to the main command loop
+            urls = urls.split(',')
             urls = prepend_http(urls)  # Prepend 'http://' if missing
             crawler.run(urls, mode='scrape')
         elif command == 'research':
-            queries = input("Enter search queries, separated by commas: ").split(',')
+            queries = input("Enter search queries, separated by commas, or type 'back' to return: ").strip()
+            if queries.lower() == 'back':
+                continue  # Go back to the main command loop
+            queries = queries.split(',')
             crawler.run(queries, mode='research')
         elif command == 'purge':
             confirmation = input("Are you sure you want to purge the database? (yes/no): ").strip().lower()
