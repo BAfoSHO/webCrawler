@@ -1,10 +1,13 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
-from selenium.common.exceptions import WebDriverException, NoSuchElementException
+from selenium.common.exceptions import WebDriverException, NoSuchElementException, TimeoutException
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from export_cookies import export_cookies_to_csv
+from proxy_config import ProxyManager
+import urllib.robotparser
 import tldextract
 from database import create_connection, init_db, insert_cookie_data, insert_research_data
 from config import DATABASE_PATH
@@ -16,7 +19,7 @@ import sys
 
 
 def check_for_duplicate(conn, table, url):
-    """ Check if the given URL already exists in the specified table """
+    # Check if the URL already exists in the database
     try:
         cur = conn.cursor()
         sql = f"SELECT id FROM {table} WHERE url = ?"
@@ -33,9 +36,29 @@ class Crawler:
         self.headless = headless
         self.conn = None
         self.domain_counter = {}
+        self.user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " \
+        
+    def ask_for_proxies(self):
+        use_proxy = input("Do you want to use a proxy? (yes/no): ").strip().lower()
+        if use_proxy == 'yes':
+            proxy_input = input("Enter 'file' to use a 'proxies.txt' file or directly enter proxies, separated by commas: ").strip()
+            if proxy_input.lower() == 'file':
+                try:
+                    with open('proxies.txt', 'r') as file:
+                        proxies = file.read().splitlines()
+                        return proxies
+                except IOError:
+                    print("Error: proxies.txt file not found.")
+                    return None
+            else:
+                proxies = proxy_input.split(',')
+                return proxies
+        else:
+            return None
 
     def start_browser(self):
         options = webdriver.ChromeOptions()
+        options.add_argument(f'user-agent={self.user_agent}')
         if self.headless:
             options.add_argument("--headless")
         try:
@@ -55,6 +78,51 @@ class Crawler:
         except WebDriverException as e:
             print(f"Error navigating to {url}: {e}")
 
+    def can_fetch_url(self, url):
+        # check robots.txt to see if the URL is allowed to be crawled
+        parsed_url = urllib.parse.urlparse(url)
+        robots_url = urllib.parse.urlunparse((parsed_url.scheme, parsed_url.netloc, '/robots.txt', '', '', ''))
+        
+        rp = urllib.robotparser.RobotFileParser()
+        rp.set_url(robots_url)
+        rp.read()
+
+        return rp.can_fetch(self.user_agent, url)
+
+    def accept_cookies(self):
+        # List of potential selectors for consent buttons
+        consent_button_selectors = [
+            {'type': By.XPATH, 'value': '//button[contains(text(), "Accept")]'},
+            {'type': By.XPATH, 'value': '//button[contains(text(), "Agree")]'},
+            {'type': By.XPATH, 'value': '//button[contains(text(), "OK")]'},
+            {'type': By.XPATH, 'value': '//button[contains(text(), "Got it")]'},
+            {'type': By.XPATH, 'value': '//button[contains(text(), "Allow")]'},
+            {'type': By.XPATH, 'value': '//button[contains(text(), "Accept All")]'},
+            {'type': By.XPATH, 'value': '//button[contains(text(), "I agree")]'},
+            {'type': By.XPATH, 'value': '//button[contains(text(), "Continue")]'},
+        ]
+
+        for selector in consent_button_selectors:
+            try:
+                # Wait for the consent button to be clickable
+                wait = WebDriverWait(self.driver, 5)  # Adjust timeout as needed
+                consent_button = wait.until(EC.element_to_be_clickable((selector['type'], selector['value'])))
+                consent_button.click()
+                print("Consent button clicked.")
+                break  # Exit the loop if a button is clicked
+            except TimeoutException:
+                print("Consent button not found for selector:", selector)
+                # Try the next selector
+            except Exception as e:
+                print(f"Error while clicking consent button: {e}")
+                # Log the error and try the next selector
+
+        # Handle cases with multiple consent steps
+        # Add additional logic here if needed
+
+        # If no consent elements are detected, proceed
+        print("Proceeding without clicking consent button.")
+
     def get_cookies(self):
         try:
             cookies = self.driver.get_cookies()
@@ -64,7 +132,6 @@ class Crawler:
         except WebDriverException as e:
             print(f"Error getting cookies: {e}")
             return []
-        
 
     def categorize_cookies(self, base_url, cookies):
         base_domain = (tldextract.extract(base_url).registered_domain)
@@ -83,11 +150,13 @@ class Crawler:
         return first_party, third_party
 
     def google_search(self, query, max_results=5):
+        # Perform a Google search and return the top results
         self.navigate_to(f"https://www.google.com/search?q={query}")
         links = self.driver.find_elements(By.CSS_SELECTOR, '.tF2Cxc .yuRUbf a')
         return [link.get_attribute('href') for link in links[:max_results]]
 
     def extract_page_data(self, url):
+        # Extract the page title and content
         self.navigate_to(url)
         try:
             title = self.driver.find_element(By.TAG_NAME, 'h1').text
@@ -120,9 +189,13 @@ class Crawler:
 
     def scrape_mode_logic(self, urls):
         for url in urls:
+            if not self.can_fetch_url(url):
+                print(f"Skipping {url} because it is disallowed by robots.txt.")
+                continue
             if not check_for_duplicate(self.conn, 'cookies', url):
                 try:
                     self.navigate_to(url)
+                    self.accept_cookies()
                     cookies = self.get_cookies()
                     first_party, third_party = self.categorize_cookies(url, cookies)
 
@@ -202,6 +275,7 @@ def display_help():
     print("Crawler Help:")
     print("  - 'scrape': Enter scrape mode to crawl specified URLs for cookies.")
     print("  - 'research': Enter research mode to perform search queries and extract data from the results.")
+    print("  - 'proxy support': Configure and test proxy settings.")
     print("  - 'q', 'quit', or 'exit': Quit the crawler.")
     print("  - '-help': Display this help information.")
     print("  - 'purge': Purge the database of all data.")
@@ -214,6 +288,7 @@ def prepend_http(urls):
 if __name__ == "__main__":
     init_db()
     crawler = Crawler(headless=True)
+    proxy_manager = None  # Initialize proxy manager
 
     while True:
         command = input("Enter command ('-help' for options): ").strip().lower()
@@ -224,7 +299,7 @@ if __name__ == "__main__":
             print("Quitting the crawler.")
             break
         elif command == 'scrape':
-            urls = input("Enter URLs to scrape, separated by commas, or type 'back' to return: ").strip()
+            urls = input("Enter up to 3 URLs (for optimal results) to scrape, separated by commas, or type 'back' to return: ").strip()
             if urls.lower() == 'back':
                 continue  # Go back to the main command loop
             urls = urls.split(',')
@@ -242,6 +317,34 @@ if __name__ == "__main__":
                 crawler.purge_database()
             else:
                 print("Purge cancelled.")
+        elif command == 'proxy support':
+            if proxy_manager is None:
+                proxy_manager = ProxyManager([])  # Initialize with an empty proxy list
+            use_proxy = input("Do you want to use a proxy? (yes/no): ").strip().lower()
+            if use_proxy == 'yes':
+                while True:
+                    proxy_input = input("Enter 'file' to use a 'proxies.txt' file or directly enter proxies, separated by commas, or 'back' to return: ").strip()
+                    if proxy_input.lower() == 'back':
+                        break
+                    elif proxy_input.lower() == 'file':
+                        try:
+                            with open('proxies.txt', 'r') as file:
+                                proxies = file.read().splitlines()
+                                proxy_manager.proxy_list = proxies
+                        except IOError:
+                            print("Error: proxies.txt file not found.")
+                    else:
+                        proxies = proxy_input.split(',')
+                        proxy_manager.proxy_list = proxies
+
+                # Test the proxies
+                for proxy in proxy_manager.proxy_list:
+                    if proxy_manager.test_proxy(proxy):
+                        print(f"Proxy {proxy} is working.")
+                    else:
+                        print(f"Proxy {proxy} is not responsive.")
+            else:
+                proxy_manager = None  # Reset the proxy manager
         else:
             print("Invalid command. Enter '-help' for options.")
 

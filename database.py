@@ -3,7 +3,7 @@ from config import DATABASE_PATH
 
 
 def create_connection(db_path):
-    """ Create a database connection to the SQLite database specified by db_path """
+    # Create database connection to SQLite database specified by db_path
     try:
         conn = sqlite3.connect(db_path)
         return conn
@@ -12,7 +12,8 @@ def create_connection(db_path):
         return None
 
 
-def create_table(conn, create_table_sql):
+def create_table(conn, create_table_sql):\
+    # Create a table from the create_table_sql statement
     try:
         c = conn.cursor()
         c.execute(create_table_sql)
@@ -23,7 +24,7 @@ def create_table(conn, create_table_sql):
 
 
 def insert_cookie_data(conn, cookie_data):
-    """ Insert a new row into the cookies table """
+    # Insert a new row into the cookies table
     sql = '''INSERT INTO cookies(url, name, value, domain, path, expires, http_only, secure, first_party)
               VALUES(?,?,?,?,?,?,?,?,?)'''
     with conn:
@@ -36,7 +37,7 @@ def insert_cookie_data(conn, cookie_data):
 
 
 def insert_research_data(conn, research_data):
-    """ Insert a new row into the research_data table """
+    # Insert a new row into the research_data table
     sql = '''INSERT INTO research_data(search_term, url, title, content)
               VALUES(?,?,?,?)'''
     with conn:
