@@ -44,7 +44,7 @@ To get the crawler up and running, follow these steps:
 
 ## CREDITS
 
-I must credit my professor, Rishab Nithyanand (University of Iowa). Through his expertise, lectures, and assigning of this project, I have obtained a deeper understanding of web cookies and their role in the digital world, along with all things anonymity and privacy.
+I must credit my professor, Rishab Nithyanand(University of Iowa). Through his expertise, lectures, and assigning of this project, I have obtained a deeper understanding of web cookies and their role in the digital world, along with all things anonymity and privacy.
 
 I am thankful for OpenAI and ChatGPT and its help debugging my code, to get a fully-functional web crawler up and running.
 
